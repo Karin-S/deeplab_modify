@@ -184,9 +184,9 @@ def main():
     parser.add_argument('--dataset', type=str, default='pascal',
                         choices=['pascal', 'coco', 'cityscapes'],
                         help='dataset name (default: pascal)')
-    parser.add_argument('--use-sbd', action='store_true', default=True,
+    parser.add_argument('--use-sbd', action='store_true', default=False,
                         help='whether to use SBD dataset (default: True)')
-    parser.add_argument('--workers', type=int, default=4,
+    parser.add_argument('--workers', type=int, default=1,
                         metavar='N', help='dataloader threads')
     parser.add_argument('--base-size', type=int, default=513,
                         help='base image size')
@@ -204,7 +204,7 @@ def main():
                         help='number of epochs to train (default: auto)')
     parser.add_argument('--start_epoch', type=int, default=0,
                         metavar='N', help='start epochs (default:0)')
-    parser.add_argument('--batch-size', type=int, default=None,
+    parser.add_argument('--batch-size', type=int, default=2,
                         metavar='N', help='input batch size for \
                                 training (default: auto)')
     parser.add_argument('--test-batch-size', type=int, default=None,
@@ -227,7 +227,7 @@ def main():
     # cuda, seed and logging
     parser.add_argument('--no-cuda', action='store_true', default=
                         False, help='disables CUDA training')
-    parser.add_argument('--gpu-ids', type=str, default='0',
+    parser.add_argument('--gpu-ids', type=str, default='1',
                         help='use which gpu to train, must be a \
                         comma-separated list of integers only (default=0)')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
@@ -247,7 +247,8 @@ def main():
                         help='skip validation during training')
 
     args = parser.parse_args()
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
+    args.cuda = False
+    # args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
         try:
             args.gpu_ids = [int(s) for s in args.gpu_ids.split(',')]
