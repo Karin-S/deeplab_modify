@@ -48,10 +48,7 @@ class Saver(object):
         p['datset'] = self.args.dataset
         p['backbone'] = self.args.backbone
         p['out_stride'] = self.args.out_stride
-        p['lr'] = self.args.lr
-        p['lr_scheduler'] = self.args.lr_scheduler
         p['loss_type'] = self.args.loss_type
-        p['epoch'] = self.args.epochs
         p['base_size'] = self.args.base_size
         p['crop_size'] = self.args.crop_size
 

@@ -14,12 +14,15 @@ class Bottleneck(nn.Module):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = BatchNorm2d(planes)
+
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
                                dilation=dilation, padding=dilation, bias=False)
         self.bn2 = BatchNorm2d(planes)
+
         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = BatchNorm2d(planes * 4)
         self.relu = nn.ReLU(inplace=True)
+
         self.downsample = downsample
         self.stride = stride
         self.dilation = dilation
@@ -35,6 +38,58 @@ class Bottleneck(nn.Module):
         out = self.bn2(out)
         out = self.relu(out)
 
+        out = self.conv3(out)
+        out = self.bn3(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+        out = self.relu(out)
+
+        return out
+
+class Deformblock(nn.Module):
+    expansion = 4
+
+    def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None):
+        super(Bottleneck, self).__init__()
+
+        # conv1
+        self.offset1 = ConvOffset2D(planes)
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.bn1 = BatchNorm2d(planes)
+
+        # conv2
+        self.offset2 = ConvOffset2D(planes)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+                               dilation=dilation, padding=dilation, bias=False)
+        self.bn2 = BatchNorm2d(planes)
+
+        # conv3
+        self.offset3 = ConvOffset2D(planes * 4)
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = BatchNorm2d(planes * 4)
+        self.relu = nn.ReLU(inplace=True)
+
+        self.downsample = downsample
+        self.stride = stride
+        self.dilation = dilation
+
+    def forward(self, x):
+        residual = x
+
+        out = self.offset1(x)
+        out = self.conv1(out)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.offset2(out)
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.offset3(out)
         out = self.conv3(out)
         out = self.bn3(out)
 
