@@ -12,6 +12,7 @@ from utils.lr_scheduler import LR_Scheduler
 from utils.saver import Saver
 from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
+import PIL
 
 class Trainer(object):
     def __init__(self, args):
@@ -173,6 +174,23 @@ class Trainer(object):
                 'best_pred': self.best_pred,
             }, is_best)
 
+    def test(self):
+        for vi, data in enumerate(test_loader):
+            img_name, img = data
+            img_name = img_name[0]
+
+            if self.args.cuda:
+                image, target = image.cuda(), target.cuda()
+            img = Variable(img, volatile=True).cuda()
+            output = self.model(img)
+
+            prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
+            new_mask = PIL.Image.fromarray(prediction .astype(np.uint8)).convert('P')
+            prediction = new_mask.putpalette(palette)
+
+            prediction.save(os.path.join('/test', 'result', img_name + '.png'))
+
+
 def main():
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
     parser.add_argument('--backbone', type=str, default='resnet',
@@ -203,7 +221,7 @@ def main():
                         help='number of epochs to train (default: auto)')
     parser.add_argument('--start_epoch', type=int, default=0,
                         metavar='N', help='start epochs (default:0)')
-    parser.add_argument('--batch-size', type=int, default=8,
+    parser.add_argument('--batch-size', type=int, default=2,
                         metavar='N', help='input batch size for \
                                 training (default: auto)')
     parser.add_argument('--test-batch-size', type=int, default=None,
