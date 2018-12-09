@@ -57,7 +57,6 @@ class testset(Dataset):
 
 dir = "E:\img"
 
-
 class Val(object):
     def __init__(self, args):
         self.args = args
