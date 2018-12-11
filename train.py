@@ -14,6 +14,7 @@ from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
 import PIL
 
+
 class Trainer(object):
     def __init__(self, args):
         self.args = args
@@ -24,17 +25,19 @@ class Trainer(object):
         # Define Tensorboard Summary
         self.summary = TensorboardSummary(self.saver.experiment_dir)
         self.writer = self.summary.create_summary()
-        
+        #self.deform = args.deform
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
+        self.train_loader, self.val_loader, self.nclass = make_data_loader(args, **kwargs)
 
         # Define network
         model = DeepLab(num_classes=self.nclass,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
                         sync_bn=args.sync_bn,
-                        freeze_bn=args.freeze_bn)
+                        freeze_bn=args.freeze_bn,
+                        deform = False
+                        )
 
         train_params = [{'params': model.get_1x_lr_params(), 'lr': args.lr},
                         {'params': model.get_10x_lr_params(), 'lr': args.lr * 10}]
@@ -139,7 +142,7 @@ class Trainer(object):
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
             with torch.no_grad():
-                output = self.model(image)
+                output = self.model(image,True)
             loss = self.criterion(output, target)
             test_loss += loss.item()
             pred = output.data.cpu().numpy()
@@ -173,23 +176,6 @@ class Trainer(object):
                 'optimizer': self.optimizer.state_dict(),
                 'best_pred': self.best_pred,
             }, is_best)
-
-    def test(self):
-        for vi, data in enumerate(test_loader):
-            img_name, img = data
-            img_name = img_name[0]
-
-            if self.args.cuda:
-                image, target = image.cuda(), target.cuda()
-            img = Variable(img, volatile=True).cuda()
-            output = self.model(img)
-
-            prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
-            new_mask = PIL.Image.fromarray(prediction .astype(np.uint8)).convert('P')
-            prediction = new_mask.putpalette(palette)
-
-            prediction.save(os.path.join('/test', 'result', img_name + '.png'))
-
 
 def main():
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
@@ -261,6 +247,8 @@ def main():
     parser.add_argument('--eval-interval', type=int, default=1,
                         help='evaluuation interval (default: 1)')
     parser.add_argument('--no-val', action='store_true', default=False,
+                        help='skip validation during training')
+    parser.add_argument('--deform', default=False,
                         help='skip validation during training')
 
     args = parser.parse_args()

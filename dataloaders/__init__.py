@@ -17,7 +17,7 @@ def make_data_loader(args, **kwargs):
         val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, **kwargs)
 
 
-        return train_loader, val_loader, test_loader, num_class
+        return train_loader, val_loader, num_class
 
     if args.dataset == 'test':
         test_set = pascal.VOCSegmentation(args, split='test')
