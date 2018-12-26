@@ -36,12 +36,6 @@ class Block(nn.Module):
                  start_with_relu=True, grow_first=True, is_last=False):
         super(Block, self).__init__()
 
-        if planes != inplanes or stride != 1:
-            self.skip = nn.Conv2d(inplanes, planes, 1, stride=stride, bias=False)
-            self.skipbn = BatchNorm(planes)
-        else:
-            self.skip = None
-
         self.relu = nn.ReLU(inplace=True)
         rep = []
 
@@ -77,6 +71,12 @@ class Block(nn.Module):
 
         self.rep = nn.Sequential(*rep)
 
+        if planes != inplanes or stride != 1:
+            self.skip = nn.Conv2d(inplanes, planes, 1, stride=stride, bias=False)
+            self.skipbn = BatchNorm(planes)
+        else:
+            self.skip = None
+
     def forward(self, inp):
         x = self.rep(inp)
 
@@ -87,6 +87,37 @@ class Block(nn.Module):
             skip = inp
 
         x = x + skip
+
+        return x
+
+
+class SpecialBlock(nn.Module):
+    def __init__(self, inplanes, planes, reps, stride=1, dilation=1, BatchNorm=None,
+                 start_with_relu=True, grow_first=True, is_last=False):
+        super(SpecialBlock, self).__init__()
+
+        self.relu = nn.ReLU(inplace=True)
+        rep = []
+
+        filters = inplanes
+        if grow_first:
+            rep.append(self.relu)
+            rep.append(SeparableConv2d(inplanes, planes, 3, 1, dilation, BatchNorm=BatchNorm))
+            rep.append(BatchNorm(planes))
+            filters = planes
+
+        for i in range(reps - 1):
+            rep.append(self.relu)
+            rep.append(SeparableConv2d(filters, filters, 3, 1, dilation, BatchNorm=BatchNorm))
+            rep.append(BatchNorm(filters))
+
+        if not start_with_relu:
+            rep = rep[1:]
+
+        self.rep = nn.Sequential(*rep)
+
+    def forward(self, inp):
+        x = self.rep(inp)
 
         return x
 
@@ -120,11 +151,9 @@ class AlignedXception(nn.Module):
         self.bn2 = BatchNorm(64)
 
         self.block1 = Block(64, 128, reps=2, stride=2, BatchNorm=BatchNorm, start_with_relu=False)
-        self.block2 = Block(128, 256, reps=2, stride=2, BatchNorm=BatchNorm, start_with_relu=False,
-                            grow_first=True)
-        self.block3 = Block(256, 728, reps=2, stride=entry_block3_stride, BatchNorm=BatchNorm,
-                            start_with_relu=True, grow_first=True, is_last=True)
-
+        self.block2 = Block(128, 256, reps=2, stride=2, BatchNorm=BatchNorm, start_with_relu=False, grow_first=True)
+        self.blockspecial = SpecialBlock(128, 256, reps=2, stride=2, BatchNorm=BatchNorm, start_with_relu=False, grow_first=True)
+        self.block3 = Block(256, 728, reps=2, stride=entry_block3_stride, BatchNorm=BatchNorm, start_with_relu=True, grow_first=True, is_last=True)
         # Middle flow
         self.block4  = Block(728, 728, reps=3, stride=1, dilation=middle_block_dilation,
                              BatchNorm=BatchNorm, start_with_relu=True, grow_first=True)
@@ -182,6 +211,9 @@ class AlignedXception(nn.Module):
     def forward(self, x):
         # Entry flow
         x = self.conv1(x)
+        feature_check = x
+        print(feature_check[0,:5,:5,1])
+
         x = self.bn1(x)
         x = self.relu(x)
 
@@ -191,10 +223,12 @@ class AlignedXception(nn.Module):
 
         x = self.block1(x)
         # add relu here
-        x = self.relu(x)
-        low_level_feat = x
+        # x = self.relu(x)
+        low_level_feat = self.blockspecial(x)
         x = self.block2(x)
         x = self.block3(x)
+
+
 
         # Middle flow
         x = self.block4(x)
@@ -229,7 +263,7 @@ class AlignedXception(nn.Module):
         x = self.bn5(x)
         x = self.relu(x)
 
-        return x, low_level_feat
+        return x, low_level_feat, feature_check
 
     def _init_weight(self):
         for m in self.modules():

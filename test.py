@@ -1,36 +1,17 @@
-from modeling.deeplab import *
-import torch
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 import torchvision.transforms as transforms
-import torchvision
 import argparse
 import os
-import numpy as np
-from tqdm import tqdm
-from mypath import Path
-from dataloaders import make_data_loader
-from modeling.sync_batchnorm.replicate import patch_replication_callback
 from modeling.deeplab import *
-from utils.loss import SegmentationLosses
-from utils.calculate_weights import calculate_weigths_labels
-from utils.lr_scheduler import LR_Scheduler
-from utils.saver import Saver
-from utils.summaries import TensorboardSummary
-from utils.metrics import Evaluator
 import PIL
 from torch.autograd import Variable
-
-
 
 '''
 color map
 0=background, 1=aeroplane, 2=bicycle, 3=bird, 4=boat, 5=bottle # 6=bus, 7=car, 8=cat, 9=chair, 10=cow, 11=diningtable,
 12=dog, 13=horse, 14=motorbike, 15=person # 16=potted plant, 17=sheep, 18=sofa, 19=train, 20=tv/monitor
 '''
-palette = [0, 0, 0, 128, 0, 0, 0, 128, 0, 128, 128, 0, 0, 0, 128, 128, 0, 128, 0, 128, 128,
-           128, 128, 128, 64, 0, 0, 192, 0, 0, 64, 128, 0, 192, 128, 0, 64, 0, 128, 192, 0, 128,
-           64, 128, 128, 192, 128, 128, 0, 64, 0, 128, 64, 0, 0, 192, 0, 128, 192, 0, 0, 64, 128]
 
 class testset(Dataset):
     """
@@ -43,8 +24,8 @@ class testset(Dataset):
         :param dir: path to test dataset directory
         """
         super().__init__()
-        self.dir = dir
-        self.img_list = list(map(lambda x: os.path.join(dir, x), os.listdir(dir)))
+        self.dir = "E:\img"
+        self.img_list = list(map(lambda x: os.path.join(self.dir, x), os.listdir(self.dir)))
         self.transform = transform
 
     def __len__(self):
@@ -55,97 +36,10 @@ class testset(Dataset):
         _img = self.transform(_img)
         return _img
 
-dir = "E:\img"
-
-class Val(object):
-    def __init__(self, args):
-        self.args = args
-
-        # Define Saver
-        self.saver = Saver(args)
-        self.saver.save_experiment_config()
-        # Define Tensorboard Summary
-        self.summary = TensorboardSummary(self.saver.experiment_dir)
-        self.writer = self.summary.create_summary()
-
-        # Define Dataloader
-        kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
-
-        # Define network
-        model = DeepLab(num_classes=self.nclass,
-                        backbone=args.backbone,
-                        output_stride=args.out_stride,
-                        sync_bn=args.sync_bn,
-                        freeze_bn=args.freeze_bn)
-
-        # Define Criterion
-        # whether to use class balanced weights
-        if args.use_balanced_weights:
-            classes_weights_path = os.path.join(Path.db_root_dir(args.dataset), args.dataset + '_classes_weights.npy')
-            if os.path.isfile(classes_weights_path):
-                weight = np.load(classes_weights_path)
-            else:
-                weight = calculate_weigths_labels(args.dataset, self.train_loader, self.nclass)
-            weight = torch.from_numpy(weight.astype(np.float32))
-        else:
-            weight = None
-        self.criterion = SegmentationLosses(weight=weight, cuda=args.cuda).build_loss(mode=args.loss_type)
-        self.model = model
-
-        # Define Evaluator
-        self.evaluator = Evaluator(self.nclass)
-
-        # Using cuda
-        if args.cuda:
-            self.model = torch.nn.DataParallel(self.model, device_ids=self.args.gpu_ids)
-            patch_replication_callback(self.model)
-            self.model = self.model.cuda()
-
-        # Resuming checkpoint
-        self.best_pred = 0.0
-        if args.resume is not None:
-            if not os.path.isfile(args.resume):
-                raise RuntimeError("=> no checkpoint found at '{}'".format(args.resume))
-            checkpoint = torch.load(args.resume)
-            args.start_epoch = checkpoint['epoch']
-            if args.cuda:
-                self.model.module.load_state_dict(checkpoint['state_dict'])
-            else:
-                self.model.load_state_dict(checkpoint['state_dict'])
-
-            self.best_pred = checkpoint['best_pred']
-            print("=> loaded checkpoint '{}' (epoch {})"
-                  .format(args.resume, checkpoint['epoch']))
-
-        # Clear start epoch if fine-tuning
-        if args.ft:
-            args.start_epoch = 0
-
-    def test(self):
-
-        for i, sample in enumerate(test_ds):
-            image = sample['image']
-            if self.args.cuda:
-                image, target = image.cuda(), target.cuda()
-            with torch.no_grad():
-                output = self.model(image)
-
-            prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
-            prediction = prediction.astype('uint8')
-
-            for img in range(2):
-                predict = prediction[img]
-                im = PIL.Image.fromarray(predict)
-                im.save(os.path.join('test', 'result', str(i) + str(img) + '.png'))
-                mask = im.convert('P')
-                new_mask = mask.putpalette(palette)
-                new_mask.save(os.path.join('test', 'show', str(i) + str(img) + '.png'))
-
 def main():
 
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
-    parser.add_argument('--backbone', type=str, default='resnet',
+    parser.add_argument('--backbone', type=str, default='xception',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
                         help='backbone name (default: resnet)')
     parser.add_argument('--out-stride', type=int, default=16,
@@ -171,7 +65,7 @@ def main():
     # training hyper params
     parser.add_argument('--start_epoch', type=int, default=0,
                         metavar='N', help='start epochs (default:0)')
-    parser.add_argument('--batch-size', type=int, default=1,
+    parser.add_argument('--batch-size', type=int, default=2,
                         metavar='N', help='input batch size for \
                                 training (default: auto)')
     parser.add_argument('--test-batch-size', type=int, default=None,
@@ -188,7 +82,7 @@ def main():
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
     # checking point
-    parser.add_argument('--resume', type=str, default='checkpoint.tar',
+    parser.add_argument('--resume', type=str, default="xception_trans_model.pth",
                         help='put the path to resuming file if needed')
     parser.add_argument('--checkname', type=str, default=None,
                         help='set the checkpoint name')
@@ -233,17 +127,18 @@ def main():
 
     test_load = DataLoader(test_ds, batch_size=1)
 
-    model = DeepLab(backbone='resnet', output_stride=16, num_classes=21, sync_bn=True, freeze_bn=False)
-    checkpoint = torch.load(args.resume)
+    model = DeepLab(backbone='xception', output_stride=16, num_classes=21, sync_bn=True, freeze_bn=False)
 
+    checkpoint = torch.load(args.resume)
 
     if args.cuda:
         model = model.cuda()
         model.module.load_state_dict(checkpoint['state_dict'])
     else:
         model.load_state_dict(checkpoint['state_dict'])
-    model.eval()
+    # model.eval()
 
+    # print(model)
 
     for i, image in enumerate(test_load):
 
@@ -257,14 +152,6 @@ def main():
         prediction = prediction.astype('uint8')
         im = PIL.Image.fromarray(prediction)
         im.save(os.path.join('test', 'result', str(i) + '.png'))
-        # for img in range(2):
-        #     predict = prediction[img]
-
-            # mask = im.convert('P')
-            # new_mask = mask.putpalette(palette)
-            # new_mask.save(os.path.join('test', 'show', str(i) + str(img) + '.png'))
-
-
 
 if __name__ == "__main__":
     main()

@@ -46,6 +46,7 @@ class VOCSegmentation(Dataset):
                 _image = os.path.join(self._image_dir, line + ".jpg")
                 _cat = os.path.join(self._cat_dir, line + ".png")
                 assert os.path.isfile(_image)
+                print(_cat)
                 assert os.path.isfile(_cat)
                 self.im_ids.append(line)
                 self.images.append(_image)

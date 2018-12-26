@@ -4,58 +4,52 @@ import torch.utils.model_zoo as model_zoo
 from modeling.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
 from torch_deform_conv.layers import ConvOffset2D
 
-class Bottleneck(nn.Module):
+class Deformblock(nn.Module):
     expansion = 4
 
-    def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None, BatchNorm=None, deform=True):
-        super(Bottleneck, self).__init__()
+    def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None, BatchNorm=None):
+        super(Deformblock, self).__init__()
 
-        self.offset1 = ConvOffset2D(planes)
-        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+        self.offset1 = ConvOffset2D(inplanes, planes)
+        print("inplanes", inplanes)
+        # self.conv1 = nn.Conv2d(planes, planes, kernel_size=1, bias=False)
+
+        print("planes", planes)
         self.bn1 = BatchNorm(planes)
 
-        self.offset2 = ConvOffset2D(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
-                               dilation=dilation, padding=dilation, bias=False)
+        self.offset2 = ConvOffset2D(planes, planes)
+        # print("3", planes)
+        # self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, dilation=dilation, padding=dilation, bias=False)
+        # print("4", planes)
         self.bn2 = BatchNorm(planes)
 
-        self.offset3 = ConvOffset2D(planes * 4)
-        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.offset3 = ConvOffset2D(planes, planes*4)
+        # print("5", planes)
+        # self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        # print("6", planes)
         self.bn3 = BatchNorm(planes * 4)
         self.relu = nn.ReLU(inplace=True)
 
         self.downsample = downsample
         self.stride = stride
         self.dilation = dilation
-        self.deform = deform
+
 
     def forward(self, x):
         residual = x
-        if self.deform:
-            out = self.offset1(x)
-            out = self.conv1(out)
-            out = self.bn1(out)
-            out = self.relu(out)
-
-            out = self.offset2(out)
-            out = self.conv2(out)
-            out = self.bn2(out)
-            out = self.relu(out)
-
-            out = self.offset3(out)
-            out = self.conv3(out)
-            out = self.bn3(out)
-        else:
-            out = self.conv1(x)
-            out = self.bn1(out)
-            out = self.relu(out)
-
-            out = self.conv2(out)
-            out = self.bn2(out)
-            out = self.relu(out)
-
-            out = self.conv3(out)
-            out = self.bn3(out)
+        # print("x", x.shape)
+        out = self.offset1(x)
+        # print("x", x.shape)
+        # out = self.conv1(out)
+        out = self.bn1(out)
+        out = self.relu(out)
+        out = self.offset2(out)
+        # out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+        out = self.offset3(out)
+        # out = self.conv3(out)
+        out = self.bn3(out)
 
         if self.downsample is not None:
             residual = self.downsample(x)
@@ -66,64 +60,59 @@ class Bottleneck(nn.Module):
         return out
 
 
-# class Deformblock(nn.Module):
-#     expansion = 4
-#
-#     def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None):
-#         super(Deformblock, self).__init__()
-#
-#         # conv1
-#         self.offset1 = ConvOffset2D(planes)
-#         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
-#         self.bn1 = BatchNorm2d(planes)
-#
-#         # conv2
-#         self.offset2 = ConvOffset2D(planes)
-#         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
-#                                dilation=dilation, padding=dilation, bias=False)
-#         self.bn2 = BatchNorm2d(planes)
-#
-#         # conv3
-#         self.offset3 = ConvOffset2D(planes * 4)
-#         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
-#         self.bn3 = BatchNorm2d(planes * 4)
-#         self.relu = nn.ReLU(inplace=True)
-#
-#         self.downsample = downsample
-#         self.stride = stride
-#         self.dilation = dilation
-#
-#     def forward(self, x):
-#         residual = x
-#
-#         out = self.offset1(x)
-#         out = self.conv1(out)
-#         out = self.bn1(out)
-#         out = self.relu(out)
-#
-#         out = self.offset2(out)
-#         out = self.conv2(out)
-#         out = self.bn2(out)
-#         out = self.relu(out)
-#
-#         out = self.offset3(out)
-#         out = self.conv3(out)
-#         out = self.bn3(out)
-#
-#         if self.downsample is not None:
-#             residual = self.downsample(x)
-#
-#         out += residual
-#         out = self.relu(out)
-#
-#         return out
+class Bottleneck(nn.Module):
+    expansion = 4
+
+    def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None, BatchNorm=None):
+        super(Bottleneck, self).__init__()
+        self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
+        # print("inplanes", inplanes)
+        # print("planes", planes)
+        self.bn1 = BatchNorm(planes)
+
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
+                               dilation=dilation, padding=dilation, bias=False)
+        self.bn2 = BatchNorm(planes)
+
+        self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
+        self.bn3 = BatchNorm(planes * 4)
+
+        self.relu = nn.ReLU(inplace=True)
+        self.downsample = downsample
+        self.stride = stride
+        self.dilation = dilation
+
+    def forward(self, x):
+        residual = x
+        # print("0", x.shape)
+        out = self.conv1(x)
+        # print("1",x.shape)
+        out = self.bn1(out)
+        # print("2",x.shape)
+        out = self.relu(out)
+        # print("3",x.shape)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out = self.bn3(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+        out = self.relu(out)
+
+        return out
 
 
 class ResNet(nn.Module):
 
-    def __init__(self, block, layers, output_stride, BatchNorm, pretrained=True, deform=True):
+    def __init__(self, block, deformblock, layers, output_stride, BatchNorm, pretrained=True):
         self.inplanes = 64
-        self.deform = deform
+        # self.deform = deform
         super(ResNet, self).__init__()
         blocks = [1, 2, 4]
         if output_stride == 16:
@@ -141,17 +130,17 @@ class ResNet(nn.Module):
         self.relu = nn.ReLU(inplace=True)
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
 
-        self.layer1 = self._make_layer(block, 64, layers[0], stride=strides[0], dilation=dilations[0], BatchNorm=BatchNorm, deform=False)
-        self.layer2 = self._make_layer(block, 128, layers[1], stride=strides[1], dilation=dilations[1], BatchNorm=BatchNorm, deform=False)
-        self.layer3 = self._make_layer(block, 256, layers[2], stride=strides[2], dilation=dilations[2], BatchNorm=BatchNorm, deform=False)
-        self.layer4 = self._make_MG_unit(block, 512, blocks=blocks, stride=strides[3], dilation=dilations[3], BatchNorm=BatchNorm, deform=True)
-        # self.layer4 = self._make_layer(block, 512, layers[3], stride=strides[3], dilation=dilations[3], BatchNorm=BatchNorm)
+        self.layer1 = self._make_layer(block, 64, layers[0], stride=strides[0], dilation=dilations[0], BatchNorm=BatchNorm)
+        self.layer2 = self._make_layer(block, 128, layers[1], stride=strides[1], dilation=dilations[1], BatchNorm=BatchNorm)
+        self.layer3 = self._make_layer(block, 256, layers[2], stride=strides[2], dilation=dilations[2], BatchNorm=BatchNorm)
+        self.layer4 = self._make_MG_unit(Deformblock, 512, blocks=blocks, stride=strides[3], dilation=dilations[3], BatchNorm=BatchNorm)
+        # self.layer4 = self._make_layer(Deformblock, 512, layers[3], stride=strides[3], dilation=dilations[3], BatchNorm=BatchNorm)
         self._init_weight()
 
         if pretrained:
             self._load_pretrained_model()
 
-    def _make_layer(self, block, planes, blocks, stride=1, dilation=1, BatchNorm=None, deform=False):
+    def _make_layer(self, block, planes, blocks, stride=1, dilation=1, BatchNorm=None):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
@@ -161,14 +150,14 @@ class ResNet(nn.Module):
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride, dilation, downsample, BatchNorm, deform))
+        layers.append(block(self.inplanes, planes, stride, dilation, downsample, BatchNorm))
         self.inplanes = planes * block.expansion
         for i in range(1, blocks):
             layers.append(block(self.inplanes, planes, dilation=dilation, BatchNorm=BatchNorm))
 
         return nn.Sequential(*layers)
 
-    def _make_MG_unit(self, block, planes, blocks, stride=1, dilation=1, BatchNorm=None, deform=True):
+    def _make_MG_unit(self, block, planes, blocks, stride=1, dilation=1, BatchNorm=None):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
@@ -179,10 +168,10 @@ class ResNet(nn.Module):
 
         layers = []
         layers.append(block(self.inplanes, planes, stride, dilation=blocks[0]*dilation,
-                            downsample=downsample, BatchNorm=BatchNorm, deform=deform))
+                            downsample=downsample, BatchNorm=BatchNorm))
         self.inplanes = planes * block.expansion
         for i in range(1, len(blocks)):
-            layers.append(block(self.inplanes, planes, stride=1, dilation=blocks[i]*dilation, BatchNorm=BatchNorm, deform=True))
+            layers.append(block(self.inplanes, planes, stride=1, dilation=blocks[i]*dilation, BatchNorm=BatchNorm))
 
         return nn.Sequential(*layers)
 
@@ -227,7 +216,7 @@ def ResNet101(output_stride, BatchNorm, pretrained=True):
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(Bottleneck, [3, 4, 23, 3], output_stride, BatchNorm, pretrained=pretrained)
+    model = ResNet(Bottleneck, Deformblock, [3, 4, 23, 3], output_stride, BatchNorm, pretrained=pretrained)
     return model
 
 if __name__ == "__main__":
