@@ -4,6 +4,7 @@ import torch.utils.model_zoo as model_zoo
 from modeling.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
 from torch_deform_conv.layers import ConvOffset2D
 
+
 class Deformblock(nn.Module):
     expansion = 4
 
@@ -34,12 +35,9 @@ class Deformblock(nn.Module):
         self.stride = stride
         self.dilation = dilation
 
-
     def forward(self, x):
         residual = x
-        # print("x", x.shape)
         out = self.offset1(x)
-        # print("x", x.shape)
         # out = self.conv1(out)
         out = self.bn1(out)
         out = self.relu(out)
@@ -65,13 +63,11 @@ class Bottleneck(nn.Module):
 
     def __init__(self, inplanes, planes, stride=1, dilation=1, downsample=None, BatchNorm=None):
         super(Bottleneck, self).__init__()
+
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
-        # print("inplanes", inplanes)
-        # print("planes", planes)
         self.bn1 = BatchNorm(planes)
 
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
-                               dilation=dilation, padding=dilation, bias=False)
+        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride, dilation=dilation, padding=dilation, bias=False)
         self.bn2 = BatchNorm(planes)
 
         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
@@ -83,14 +79,12 @@ class Bottleneck(nn.Module):
         self.dilation = dilation
 
     def forward(self, x):
+
         residual = x
-        # print("0", x.shape)
+
         out = self.conv1(x)
-        # print("1",x.shape)
         out = self.bn1(out)
-        # print("2",x.shape)
         out = self.relu(out)
-        # print("3",x.shape)
 
         out = self.conv2(out)
         out = self.bn2(out)
@@ -112,7 +106,6 @@ class ResNet(nn.Module):
 
     def __init__(self, block, deformblock, layers, output_stride, BatchNorm, pretrained=True):
         self.inplanes = 64
-        # self.deform = deform
         super(ResNet, self).__init__()
         blocks = [1, 2, 4]
         if output_stride == 16:
@@ -144,8 +137,7 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
+                nn.Conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
                 BatchNorm(planes * block.expansion),
             )
 
@@ -161,14 +153,12 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
+                nn.Conv2d(self.inplanes, planes * block.expansion, kernel_size=1, stride=stride, bias=False),
                 BatchNorm(planes * block.expansion),
             )
 
         layers = []
-        layers.append(block(self.inplanes, planes, stride, dilation=blocks[0]*dilation,
-                            downsample=downsample, BatchNorm=BatchNorm))
+        layers.append(block(self.inplanes, planes, stride, dilation=blocks[0]*dilation, downsample=downsample, BatchNorm=BatchNorm))
         self.inplanes = planes * block.expansion
         for i in range(1, len(blocks)):
             layers.append(block(self.inplanes, planes, stride=1, dilation=blocks[i]*dilation, BatchNorm=BatchNorm))

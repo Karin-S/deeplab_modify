@@ -116,7 +116,7 @@ def main():
     parser.add_argument('--backbone', type=str, default='xception',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
                         help='backbone name (default: resnet)')
-    parser.add_argument('--out-stride', type=int, default=16,
+    parser.add_argument('--out-stride', type=int, default=8,
                         help='network output stride (default: 8)')
     parser.add_argument('--dataset', type=str, default='pascal',
                         choices=['pascal', 'coco', 'cityscapes'],
@@ -157,7 +157,7 @@ def main():
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
     # checking point
-    parser.add_argument('--resume', type=str, default='../tran/xception_trans_model.pth',
+    parser.add_argument('--resume', type=str, default='xception_trans_model.pth',
                         help='put the path to resuming file if needed')
     parser.add_argument('--checkname', type=str, default=None,
                         help='set the checkpoint name')
@@ -171,7 +171,6 @@ def main():
                         help='skip validation during training')
 
     args = parser.parse_args()
-    args.cuda = False
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
         try:
@@ -193,6 +192,7 @@ def main():
 
     if args.checkname is None:
         args.checkname = 'deeplab-' + str(args.backbone)
+
     print(args)
     torch.manual_seed(args.seed)
     val = Val(args)

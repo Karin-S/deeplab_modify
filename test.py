@@ -6,6 +6,9 @@ import os
 from modeling.deeplab import *
 import PIL
 from torch.autograd import Variable
+import matplotlib.pyplot as plt
+import numpy as np
+import cv2
 
 '''
 color map
@@ -19,22 +22,39 @@ class testset(Dataset):
     """
     NUM_CLASSES = 21
 
-    def __init__(self, dir, transform):
+    def __init__(self, transforms=transforms):
         """
         :param dir: path to test dataset directory
         """
         super().__init__()
-        self.dir = "E:\img"
+        self.dir = "E:/img"
         self.img_list = list(map(lambda x: os.path.join(self.dir, x), os.listdir(self.dir)))
-        self.transform = transform
+        self.transforms = transforms.Compose([transforms.ToTensor()])
 
     def __len__(self):
         return len(self.img_list)
 
     def __getitem__(self, index):
-        _img = PIL.Image.open(self.img_list[index]).convert('RGB')
-        _img = self.transform(_img)
-        return _img
+
+        img = plt.imread(self.img_list[index])
+        h, w, _ = img.shape
+        ratio = 513. / np.max([w, h])
+        resized = cv2.resize(img, (int(ratio * w), int(ratio * h)))
+        resized = resized / 127.5 - 1.
+        if w < h:
+            pad_x = int(513 - resized.shape[1])
+            resized2 = np.pad(resized, ((0, 0), (0, pad_x), (0, 0)), mode='constant')
+        elif w > h:
+            pad_y = int(513 - resized.shape[0])
+            resized2 = np.pad(resized, ((pad_y, 0), (0, 0), (0, 0)), mode='constant')
+
+        resized2 = resized2.transpose((2, 0, 1))
+        resized3 = np.zeros((1, 3, 513, 513), dtype=np.float32)
+        resized3[0, ...] = resized2
+        resized4 = torch.from_numpy(resized3)
+
+        id = str(self.img_list[index].split('\\')[-1][:-4])
+        return resized4, id
 
 def main():
 
@@ -118,16 +138,13 @@ def main():
 
     if args.checkname is None:
         args.checkname = 'deeplab-' + str(args.backbone)
-    print(args)
-    composed_transforms = transforms.Compose([transforms.ToTensor(),
-        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
+
+    composed_transforms = transforms.Compose([transforms.ToTensor()])
+    #     transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
     torch.manual_seed(args.seed)
-    test_ds = testset(dir, composed_transforms)
-
-
+    test_ds = testset(transforms)
     test_load = DataLoader(test_ds, batch_size=1)
-
-    model = DeepLab(backbone='xception', output_stride=16, num_classes=21, sync_bn=True, freeze_bn=False)
+    model = DeepLab(backbone='xception', output_stride=8, num_classes=21, sync_bn=True, freeze_bn=False)
 
     checkpoint = torch.load(args.resume)
 
@@ -136,22 +153,46 @@ def main():
         model.module.load_state_dict(checkpoint['state_dict'])
     else:
         model.load_state_dict(checkpoint['state_dict'])
-    # model.eval()
+    torch.save(model, 'model.pth')
+    model.eval()
 
-    # print(model)
+    # img = plt.imread("E:/img/2008_000046.jpg")
+    # h, w, _ = img.shape
+    # ratio = 513. / np.max([w, h])
+    # resized = cv2.resize(img, (int(ratio * w), int(ratio * h)))
+    # resized = resized / 127.5 - 1.
+    # if w < h:
+    #     pad_x = int(513 - resized.shape[1])
+    #     resized2 = np.pad(resized, ((0, 0), (0, pad_x), (0, 0)), mode='constant')
+    # elif w > h:
+    #     pad_y = int(513 - resized.shape[0])
+    #     resized2 = np.pad(resized, ((pad_y, 0), (0, 0), (0, 0)), mode='constant')
+    #
+    # if args.cuda:
+    #     resized2 = resized2.cuda()
+    # resized2 = resized2.transpose((2, 0, 1))
+    # resized3 = np.zeros((1, 3, 513, 513), dtype=np.float32)
+    # resized3[0, ...] = resized2
+    # resized4 = torch.from_numpy(resized3)
+
+
+    # output = model(resized4)
+    # prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
+    # prediction = prediction.astype('uint8')
+    # im = PIL.Image.fromarray(prediction)
+    # im.save(os.path.join('test', 'result', str(i) + '.png'))
 
     for i, image in enumerate(test_load):
-
-        if args.cuda:
-            image = image.cuda()
-        image = Variable(image, volatile=True)#.cuda()
+        # print(image[0])
+        # if args.cuda:
+        #     image = image.cuda()
 
         output = model(image)
-
-        prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
-        prediction = prediction.astype('uint8')
-        im = PIL.Image.fromarray(prediction)
-        im.save(os.path.join('test', 'result', str(i) + '.png'))
+        # prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
+        # prediction = prediction.astype('uint8')
+        # im = PIL.Image.fromarray(prediction)
+        # print(image.__getitem__())
+        # im.save(os.path.join('E:/img/res/', image.__getitem__() + '.png'))
 
 if __name__ == "__main__":
     main()

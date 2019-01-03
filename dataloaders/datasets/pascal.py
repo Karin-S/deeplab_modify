@@ -7,6 +7,7 @@ from mypath import Path
 from torchvision import transforms
 from dataloaders import custom_transforms as tr
 
+
 class VOCSegmentation(Dataset):
     """
     PascalVoc dataset
@@ -22,7 +23,7 @@ class VOCSegmentation(Dataset):
         super().__init__()
         self._base_dir = base_dir
         self._image_dir = os.path.join(self._base_dir, 'JPEGImages')
-        self._cat_dir = os.path.join(self._base_dir, 'SegmentationClass')
+        self._cat_dir = os.path.join(self._base_dir, 'SegmentationClassAug')
 
         if isinstance(split, str):
             self.split = [split]
@@ -46,7 +47,6 @@ class VOCSegmentation(Dataset):
                 _image = os.path.join(self._image_dir, line + ".jpg")
                 _cat = os.path.join(self._cat_dir, line + ".png")
                 assert os.path.isfile(_image)
-                print(_cat)
                 assert os.path.isfile(_cat)
                 self.im_ids.append(line)
                 self.images.append(_image)
@@ -69,6 +69,8 @@ class VOCSegmentation(Dataset):
                 return self.transform_tr(sample)
             elif split == 'val':
                 return self.transform_val(sample)
+            elif split == 'arg':
+                return self.transform_tr(sample)
 
 
     def _make_img_gt_point_pair(self, index):
