@@ -1,9 +1,3 @@
-from modeling.deeplab import *
-import torch
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
-import torchvision.transforms as transforms
-import torchvision
 import argparse
 import os
 import numpy as np
@@ -14,48 +8,13 @@ from modeling.sync_batchnorm.replicate import patch_replication_callback
 from modeling.deeplab import *
 from utils.loss import SegmentationLosses
 from utils.calculate_weights import calculate_weigths_labels
-from utils.lr_scheduler import LR_Scheduler
 from utils.saver import Saver
 from utils.summaries import TensorboardSummary
 from utils.metrics import Evaluator
 import PIL
-from torch.autograd import Variable
 
-'''
-color map
-0=background, 1=aeroplane, 2=bicycle, 3=bird, 4=boat, 5=bottle # 6=bus, 7=car, 8=cat, 9=chair, 10=cow, 11=diningtable,
-12=dog, 13=horse, 14=motorbike, 15=person # 16=potted plant, 17=sheep, 18=sofa, 19=train, 20=tv/monitor
-'''
-palette = [0, 0, 0, 128, 0, 0, 0, 128, 0, 128, 128, 0, 0, 0, 128, 128, 0, 128, 0, 128, 128,
-           128, 128, 128, 64, 0, 0, 192, 0, 0, 64, 128, 0, 192, 128, 0, 64, 0, 128, 192, 0, 128,
-           64, 128, 128, 192, 128, 128, 0, 64, 0, 128, 64, 0, 0, 192, 0, 128, 192, 0, 0, 64, 128]
 
-class testset(Dataset):
-    """
-    test dataset
-    """
-    NUM_CLASSES = 21
-
-    def __init__(self, dir, transform):
-        """
-        :param dir: path to test dataset directory
-        """
-        super().__init__()
-        self.dir = dir
-        self.img_list = list(map(lambda x: os.path.join(dir, x), os.listdir(dir)))
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.img_list)
-
-    def __getitem__(self, index):
-        _img = PIL.Image.open(self.img_list[index]).convert('RGB')
-        _img = self.transform(_img)
-        return _img
-
-dir = "E:\img"
-
-class Val(object):
+class evaluation(object):
     def __init__(self, args):
         self.args = args
 
@@ -68,13 +27,14 @@ class Val(object):
 
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.val_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
+        self.train_loader, self.val_loader, self.arg_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
 
         # Define network
         model = DeepLab(num_classes=self.nclass,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
-                        sync_bn=args.sync_bn,
+                        # sync_bn=args.sync_bn,
+                        sync_bn=True,
                         freeze_bn=args.freeze_bn)
 
         # Define Criterion
@@ -120,33 +80,122 @@ class Val(object):
         if args.ft:
             args.start_epoch = 0
 
-    def test(self):
-
-        for i, sample in enumerate(test_ds):
-            image = sample['image']
+    def validation(self):
+        self.model.eval()
+        self.evaluator.reset()
+        tbar = tqdm(self.val_loader, desc='\r')
+        test_loss = 0.0
+        for i, sample in enumerate(tbar):
+            image, target = sample['image'], sample['label']
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
             with torch.no_grad():
                 output = self.model(image)
+            loss = self.criterion(output, target)
+            test_loss += loss.item()
+            pred = output.data.cpu().numpy()
+            target = target.cpu().numpy()
+            pred = np.argmax(pred, axis=1)
+            # Add batch sample into evaluator
+            # print(pred.dtype)#int64
+            # print(target.dtype)#float32
+            self.evaluator.add_batch(target, pred)
 
+        # Fast test during the training
+        Acc = self.evaluator.Pixel_Accuracy()
+        Acc_class = self.evaluator.Pixel_Accuracy_Class()
+        mIoU = self.evaluator.Mean_Intersection_over_Union()
+        FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
+        self.writer.add_scalar('val/total_loss_epoch', test_loss)
+        self.writer.add_scalar('val/mIoU', mIoU)
+        self.writer.add_scalar('val/Acc', Acc)
+        self.writer.add_scalar('val/Acc_class', Acc_class)
+        self.writer.add_scalar('val/fwIoU', FWIoU)
+        print('Validation:')
+        print('[numImages: %5d]' % (i * self.args.batch_size + image.data.shape[0]))
+        print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+        print('Loss: %.3f' % test_loss)
+
+    def test(self):
+
+        self.model.eval()
+        # self.evaluator.reset()
+        tbar = tqdm(self.test_loader, desc='\r')
+
+        for i, sample in enumerate(tbar):
+            image = sample[0]
+            id = sample[1]
+            # print(id)
+            # print(image.shape)
+            # print(image[0, 0, :5, :5])
+            if self.args.cuda:
+                image = image.cuda()
+            with torch.no_grad():
+                output = self.model(image)
             prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
             prediction = prediction.astype('uint8')
+            im = PIL.Image.fromarray(prediction)
+            im.save(id[0])
 
-            for img in range(2):
-                predict = prediction[img]
-                im = PIL.Image.fromarray(predict)
-                im.save(os.path.join('test', 'result', str(i) + str(img) + '.png'))
-                mask = im.convert('P')
-                new_mask = mask.putpalette(palette)
-                new_mask.save(os.path.join('test', 'show', str(i) + str(img) + '.png'))
+    def validation_test(self):
+        self.model.eval()
+        self.evaluator.reset()
+        tbar = tqdm(self.val_loader, desc='\r')
+        test_loss = 0.0
+        for i, sample in enumerate(tbar):
+            image, target, id = sample['image'], sample['label'], sample['id']
+            print(id)
+            if self.args.cuda:
+                image, target = image.cuda(), target.cuda()
+            with torch.no_grad():
+                output = self.model(image)
+            prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
+            im = PIL.Image.fromarray(prediction.astype('uint8'))
+            h = target.shape[1]
+            w = target.shape[2]
+            ratio = 513. / np.max([w, h])
+            print(ratio)
+            if w < h:
+                m = int(w * ratio)
+                im = im.crop((0, 0, m, 513))
+                print(m)
+            elif w >= h:
+                m = int(h * ratio)
+                print(m)
+                im = im.crop((0, 0, 513, m))
+            im = im.resize((w, h), PIL.Image.BILINEAR)
+            im.save(os.path.join("C:\\Users\\Shuang\\Desktop\\val_res", id[0] + ".png"))
+
+    def compare(self):
+
+        tbar = tqdm(self.val_loader, desc='\r')
+        test_loss = 0.0
+        for i, sample in enumerate(tbar):
+            image, target = sample['image'], sample['label']
+            image = image.numpy().astype(np.int64)
+            target = target.numpy().astype(np.float32)
+            self.evaluator.add_batch(target, image)
+
+        # Fast test during the training
+        Acc = self.evaluator.Pixel_Accuracy()
+        Acc_class = self.evaluator.Pixel_Accuracy_Class()
+        mIoU = self.evaluator.Mean_Intersection_over_Union()
+        FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
+        self.writer.add_scalar('val/mIoU', mIoU)
+        self.writer.add_scalar('val/Acc', Acc)
+        self.writer.add_scalar('val/Acc_class', Acc_class)
+        self.writer.add_scalar('val/fwIoU', FWIoU)
+        print('Validation:')
+        print('[numImages: %5d]' % (i * self.args.batch_size + image.data.shape[0]))
+        print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+
 
 def main():
-
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
     parser.add_argument('--backbone', type=str, default='xception',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
                         help='backbone name (default: resnet)')
-    parser.add_argument('--out-stride', type=int, default=16,
+    parser.add_argument('--out-stride', type=int, default=8,
                         help='network output stride (default: 8)')
     parser.add_argument('--dataset', type=str, default='pascal',
                         choices=['pascal', 'coco', 'cityscapes'],
@@ -159,7 +208,7 @@ def main():
                         help='base image size')
     parser.add_argument('--crop-size', type=int, default=513,
                         help='crop image size')
-    parser.add_argument('--sync-bn', type=bool, default=None,
+    parser.add_argument('--sync-bn', type=bool, default=True,
                         help='whether to use sync bn (default: auto)')
     parser.add_argument('--freeze-bn', type=bool, default=False,
                         help='whether to freeze bn parameters (default: False)')
@@ -179,14 +228,15 @@ def main():
                         help='whether to use balanced weights (default: False)')
 
     # cuda, seed and logging
-    parser.add_argument('--no-cuda', action='store_true', default=False, help='disables CUDA training')
+    parser.add_argument('--no-cuda', action='store_true', default=False,
+                        help='disables CUDA training')
     parser.add_argument('--gpu-ids', type=str, default='0',
                         help='use which gpu to train, must be a \
                         comma-separated list of integers only (default=0)')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
     # checking point
-    parser.add_argument('--resume', type=str, default='checkpoint.tar',
+    parser.add_argument('--resume', type=str, default='xception_trans_model.pth',
                         help='put the path to resuming file if needed')
     parser.add_argument('--checkname', type=str, default=None,
                         help='set the checkpoint name')
@@ -200,8 +250,9 @@ def main():
                         help='skip validation during training')
 
     args = parser.parse_args()
-    args.cuda = False
-    # args.cuda = not args.no_cuda and torch.cuda.is_available()
+
+    args.cuda = not args.no_cuda and torch.cuda.is_available()
+
     if args.cuda:
         try:
             args.gpu_ids = [int(s) for s in args.gpu_ids.split(',')]
@@ -222,29 +273,12 @@ def main():
 
     if args.checkname is None:
         args.checkname = 'deeplab-' + str(args.backbone)
+
     print(args)
-    composed_transforms = transforms.Compose([transforms.ToTensor(),
-        transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
     torch.manual_seed(args.seed)
-    test_ds = testset(dir, composed_transforms)
-
-
-    test_load = DataLoader(test_ds, batch_size=1)
-
-    model = DeepLab(backbone='resnet', output_stride=16, num_classes=21, sync_bn=True, freeze_bn=False)
-    checkpoint = torch.load(args.resume)
-
-
-    if args.cuda:
-        model = model.cuda()
-        model.module.load_state_dict(checkpoint['state_dict'])
-    else:
-        model.load_state_dict(checkpoint['state_dict'])
-    para = []
-
-    for i in model.named_parameters():
-        para.append(i)
-    print(len(para))
+    eva = evaluation(args)
+    eva.compare()
+    eva.writer.close()
 
 
 if __name__ == "__main__":

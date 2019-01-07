@@ -1,14 +1,13 @@
-from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
-import torchvision.transforms as transforms
 import argparse
 import os
 from modeling.deeplab import *
 import PIL
-from torch.autograd import Variable
+from modeling.sync_batchnorm.replicate import patch_replication_callback
 import matplotlib.pyplot as plt
 import numpy as np
 import cv2
+from tqdm import tqdm
 
 '''
 color map
@@ -16,45 +15,30 @@ color map
 12=dog, 13=horse, 14=motorbike, 15=person # 16=potted plant, 17=sheep, 18=sofa, 19=train, 20=tv/monitor
 '''
 
-class testset(Dataset):
-    """
-    test dataset
-    """
-    NUM_CLASSES = 21
 
-    def __init__(self, transforms=transforms):
-        """
-        :param dir: path to test dataset directory
-        """
-        super().__init__()
-        self.dir = "E:/img"
-        self.img_list = list(map(lambda x: os.path.join(self.dir, x), os.listdir(self.dir)))
-        self.transforms = transforms.Compose([transforms.ToTensor()])
+# class testset(Dataset):
+#     """
+#     test dataset
+#     """
+#     NUM_CLASSES = 21
+#
+#     def __init__(self):
+#         """
+#         :param dir: path to test dataset directory
+#         """
+#         super().__init__()
+#         self.dir = "E:\img"
+#         self.img_list = list(map(lambda x: os.path.join(self.dir, x), os.listdir(self.dir)))
+#
+#     def __len__(self):
+#         return len(self.img_list)
+#
+#     def __getitem__(self, index):
+#         _img = PIL.Image.open(self.img_list[index]).convert('RGB')
+#         _img = self.transform(_img)
+#         return _img
 
-    def __len__(self):
-        return len(self.img_list)
 
-    def __getitem__(self, index):
-
-        img = plt.imread(self.img_list[index])
-        h, w, _ = img.shape
-        ratio = 513. / np.max([w, h])
-        resized = cv2.resize(img, (int(ratio * w), int(ratio * h)))
-        resized = resized / 127.5 - 1.
-        if w < h:
-            pad_x = int(513 - resized.shape[1])
-            resized2 = np.pad(resized, ((0, 0), (0, pad_x), (0, 0)), mode='constant')
-        elif w > h:
-            pad_y = int(513 - resized.shape[0])
-            resized2 = np.pad(resized, ((pad_y, 0), (0, 0), (0, 0)), mode='constant')
-
-        resized2 = resized2.transpose((2, 0, 1))
-        resized3 = np.zeros((1, 3, 513, 513), dtype=np.float32)
-        resized3[0, ...] = resized2
-        resized4 = torch.from_numpy(resized3)
-
-        id = str(self.img_list[index].split('\\')[-1][:-4])
-        return resized4, id
 
 def main():
 
@@ -62,7 +46,7 @@ def main():
     parser.add_argument('--backbone', type=str, default='xception',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
                         help='backbone name (default: resnet)')
-    parser.add_argument('--out-stride', type=int, default=16,
+    parser.add_argument('--out-stride', type=int, default=8,
                         help='network output stride (default: 8)')
     parser.add_argument('--dataset', type=str, default='pascal',
                         choices=['pascal', 'coco', 'cityscapes'],
@@ -85,7 +69,7 @@ def main():
     # training hyper params
     parser.add_argument('--start_epoch', type=int, default=0,
                         metavar='N', help='start epochs (default:0)')
-    parser.add_argument('--batch-size', type=int, default=2,
+    parser.add_argument('--batch-size', type=int, default=1,
                         metavar='N', help='input batch size for \
                                 training (default: auto)')
     parser.add_argument('--test-batch-size', type=int, default=None,
@@ -116,8 +100,26 @@ def main():
                         help='skip validation during training')
 
     args = parser.parse_args()
-    args.cuda = False
-    # args.cuda = not args.no_cuda and torch.cuda.is_available()
+
+    # train_loader, val_loader, arg_loader, test_loader, nclass = make_data_loader(args, **kwargs)
+    #
+    # for i, sample in enumerate(tbar):
+    #     image = sample[0]
+    #     id = sample[1]
+    #
+    #
+    #     if self.args.cuda:
+    #         image = image.cuda()
+    #     with torch.no_grad():
+    #         output = self.model(image)
+    #         prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
+    #         prediction = prediction.astype('uint8')
+    #         im = PIL.Image.fromarray(prediction)
+    #         im.save(id[0])
+    #     break
+
+    # args.cuda = False
+    args.cuda = not args.no_cuda and torch.cuda.is_available()
     if args.cuda:
         try:
             args.gpu_ids = [int(s) for s in args.gpu_ids.split(',')]
@@ -139,60 +141,52 @@ def main():
     if args.checkname is None:
         args.checkname = 'deeplab-' + str(args.backbone)
 
-    composed_transforms = transforms.Compose([transforms.ToTensor()])
+
+    # composed_transforms = transforms.Compose([transforms.ToTensor(),
     #     transforms.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
     torch.manual_seed(args.seed)
-    test_ds = testset(transforms)
-    test_load = DataLoader(test_ds, batch_size=1)
-    model = DeepLab(backbone='xception', output_stride=8, num_classes=21, sync_bn=True, freeze_bn=False)
+    # test_ds = testset()
+    # test_load = DataLoader(test_ds, batch_size=1)
+    model = DeepLab(backbone='xception', output_stride=8, num_classes=21, sync_bn=True, freeze_bn=True)
 
     checkpoint = torch.load(args.resume)
 
     if args.cuda:
+        model = torch.nn.DataParallel(model, device_ids=args.gpu_ids)
+        patch_replication_callback(model)
         model = model.cuda()
         model.module.load_state_dict(checkpoint['state_dict'])
     else:
         model.load_state_dict(checkpoint['state_dict'])
-    torch.save(model, 'model.pth')
-    model.eval()
+    # model.eval()
+    # tbar = tqdm(test_loader, desc='\r')
+    img = plt.imread("F:/pingan/VOCdevkit/VOC2012/test\\2008_006894_.jpg")
+    h, w, _ = img.shape
+    ratio = 513. / np.max([w, h])
+    resized = cv2.resize(img, (int(ratio * w), int(ratio * h)))
+    resized = resized / 127.5 - 1.
+    if w < h:
+        pad_x = int(513 - resized.shape[1])
+        resized2 = np.pad(resized, ((0, 0), (0, pad_x), (0, 0)), mode='constant')
+    elif w > h:
+        pad_y = int(513 - resized.shape[0])
+        resized2 = np.pad(resized, ((0, pad_y), (0, 0), (0, 0)), mode='constant')
 
-    # img = plt.imread("E:/img/2008_000046.jpg")
-    # h, w, _ = img.shape
-    # ratio = 513. / np.max([w, h])
-    # resized = cv2.resize(img, (int(ratio * w), int(ratio * h)))
-    # resized = resized / 127.5 - 1.
-    # if w < h:
-    #     pad_x = int(513 - resized.shape[1])
-    #     resized2 = np.pad(resized, ((0, 0), (0, pad_x), (0, 0)), mode='constant')
-    # elif w > h:
-    #     pad_y = int(513 - resized.shape[0])
-    #     resized2 = np.pad(resized, ((pad_y, 0), (0, 0), (0, 0)), mode='constant')
-    #
-    # if args.cuda:
-    #     resized2 = resized2.cuda()
-    # resized2 = resized2.transpose((2, 0, 1))
-    # resized3 = np.zeros((1, 3, 513, 513), dtype=np.float32)
-    # resized3[0, ...] = resized2
-    # resized4 = torch.from_numpy(resized3)
+    resized2 = resized2.transpose((2, 0, 1))
+    resized3 = np.zeros((1, 3, 513, 513), dtype=np.float32)
+    resized3[0, ...] = resized2
+    resized4 = torch.from_numpy(resized3)
+    # print(resized4[0, 0, :5, :5])
+    # print(resized4.shape)
+    with torch.no_grad():
+        output = model(resized4)
+    prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
+    prediction = prediction.astype('uint8')
+    im = PIL.Image.fromarray(prediction)
+    # print(output[0, 1, 20:25, 20:25])
+    # print(output)
+    im.save(os.path.join('F://123.png'))
 
-
-    # output = model(resized4)
-    # prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
-    # prediction = prediction.astype('uint8')
-    # im = PIL.Image.fromarray(prediction)
-    # im.save(os.path.join('test', 'result', str(i) + '.png'))
-
-    for i, image in enumerate(test_load):
-        # print(image[0])
-        # if args.cuda:
-        #     image = image.cuda()
-
-        output = model(image)
-        # prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
-        # prediction = prediction.astype('uint8')
-        # im = PIL.Image.fromarray(prediction)
-        # print(image.__getitem__())
-        # im.save(os.path.join('E:/img/res/', image.__getitem__() + '.png'))
 
 if __name__ == "__main__":
     main()
