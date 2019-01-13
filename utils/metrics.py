@@ -19,7 +19,22 @@ class Evaluator(object):
         MIoU = np.diag(self.confusion_matrix) / (
                     np.sum(self.confusion_matrix, axis=1) + np.sum(self.confusion_matrix, axis=0) -
                     np.diag(self.confusion_matrix))
+        print(MIoU)
         MIoU = np.nanmean(MIoU)
+        return MIoU
+
+    def One_Intersection_over_Union(self):
+        MIoU = np.diag(self.confusion_matrix) / (
+                    np.sum(self.confusion_matrix, axis=1) + np.sum(self.confusion_matrix, axis=0) -
+                    np.diag(self.confusion_matrix))
+        sum = 0.0
+        count = 0
+        for i in range(21):
+            if MIoU[i] != 0:
+                sum = sum + MIoU[i]
+                count = count + 1
+
+        MIoU = sum / count
         return MIoU
 
     def Frequency_Weighted_Intersection_over_Union(self):

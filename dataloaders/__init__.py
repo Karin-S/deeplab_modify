@@ -6,7 +6,8 @@ def make_data_loader(args, **kwargs):
 
     if args.dataset == 'pascal':
         train_set = pascal.VOCSegmentation(args, split='train')
-        val_set = pascal.VOCSegmentationval(args, split='val')#############################3
+        val_set = pascal.VOCSegmentation(args, split='val')
+        val_set_for_save = pascal.VOCSegmentationval_save(args, split='val')
         arg_set = pascal.VOCSegmentation(args, split='arg')
         test_set = pascal.VOCSegmentationtest(args, split='test')
 
@@ -18,9 +19,10 @@ def make_data_loader(args, **kwargs):
         train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)
         val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, **kwargs)
         arg_loader = DataLoader(arg_set, batch_size=args.batch_size, shuffle=True, **kwargs)
+        val_set_for_save = DataLoader(val_set_for_save, batch_size=1, shuffle=True, **kwargs)
         test_loader = DataLoader(test_set, batch_size=1, shuffle=True, **kwargs)
 
-        return train_loader, val_loader, arg_loader, test_loader, num_class
+        return train_loader, val_loader, arg_loader, test_loader, val_set_for_save, num_class
 
     elif args.dataset == 'cityscapes':
         train_set = cityscapes.CityscapesSegmentation(args, split='train')

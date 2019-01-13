@@ -27,13 +27,12 @@ class evaluation(object):
 
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.val_loader, self.arg_loader, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
+        self.train_loader, self.val_loader, self.arg_loader, self.val_loader_for_compare, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
 
         # Define network
         model = DeepLab(num_classes=self.nclass,
                         backbone=args.backbone,
                         output_stride=args.out_stride,
-                        # sync_bn=args.sync_bn,
                         sync_bn=True,
                         freeze_bn=args.freeze_bn)
 
@@ -80,6 +79,7 @@ class evaluation(object):
         if args.ft:
             args.start_epoch = 0
 
+    # evaluate the model on validation dataset
     def validation(self):
         self.model.eval()
         self.evaluator.reset()
@@ -96,38 +96,31 @@ class evaluation(object):
             pred = output.data.cpu().numpy()
             target = target.cpu().numpy()
             pred = np.argmax(pred, axis=1)
-            # Add batch sample into evaluator
-            # print(pred.dtype)#int64
-            # print(target.dtype)#float32
             self.evaluator.add_batch(target, pred)
 
-        # Fast test during the training
         Acc = self.evaluator.Pixel_Accuracy()
         Acc_class = self.evaluator.Pixel_Accuracy_Class()
         mIoU = self.evaluator.Mean_Intersection_over_Union()
         FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
-        self.writer.add_scalar('val/total_loss_epoch', test_loss)
-        self.writer.add_scalar('val/mIoU', mIoU)
-        self.writer.add_scalar('val/Acc', Acc)
-        self.writer.add_scalar('val/Acc_class', Acc_class)
-        self.writer.add_scalar('val/fwIoU', FWIoU)
         print('Validation:')
         print('[numImages: %5d]' % (i * self.args.batch_size + image.data.shape[0]))
-        print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+        # print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+        print("Acc:", Acc)
+        print("Acc_class:", Acc_class)
+        print("mIoU:", mIoU)
+        print("fwIoU:", FWIoU)
         print('Loss: %.3f' % test_loss)
 
+    # save the segmentation of test datasets
     def test(self):
 
         self.model.eval()
-        # self.evaluator.reset()
+        self.evaluator.reset()
         tbar = tqdm(self.test_loader, desc='\r')
 
         for i, sample in enumerate(tbar):
             image = sample[0]
-            id = sample[1]
-            # print(id)
-            # print(image.shape)
-            # print(image[0, 0, :5, :5])
+            image_id = sample[1]
             if self.args.cuda:
                 image = image.cuda()
             with torch.no_grad():
@@ -135,15 +128,15 @@ class evaluation(object):
             prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
             prediction = prediction.astype('uint8')
             im = PIL.Image.fromarray(prediction)
-            im.save(id[0])
+            im.save(image_id[0])
 
+    # save the segmentation of validation datasets in original size
     def validation_test(self):
         self.model.eval()
         self.evaluator.reset()
         tbar = tqdm(self.val_loader, desc='\r')
-        test_loss = 0.0
         for i, sample in enumerate(tbar):
-            image, target, id = sample['image'], sample['label'], sample['id']
+            image, target, image_id = sample['image'], sample['label'], sample['id']
             print(id)
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
@@ -164,12 +157,12 @@ class evaluation(object):
                 print(m)
                 im = im.crop((0, 0, 513, m))
             im = im.resize((w, h), PIL.Image.BILINEAR)
-            im.save(os.path.join("C:\\Users\\Shuang\\Desktop\\val_res", id[0] + ".png"))
+            im.save(os.path.join("C:\\Users\\Shuang\\Desktop\\val_res", image_id[0] + ".png"))
 
+    # calculate the MIoU of the result and label
     def compare(self):
 
-        tbar = tqdm(self.val_loader, desc='\r')
-        test_loss = 0.0
+        tbar = tqdm(self.val_loader_for_compare, desc='\r')
         for i, sample in enumerate(tbar):
             image, target = sample['image'], sample['label']
             image = image.numpy().astype(np.int64)
@@ -181,13 +174,35 @@ class evaluation(object):
         Acc_class = self.evaluator.Pixel_Accuracy_Class()
         mIoU = self.evaluator.Mean_Intersection_over_Union()
         FWIoU = self.evaluator.Frequency_Weighted_Intersection_over_Union()
-        self.writer.add_scalar('val/mIoU', mIoU)
-        self.writer.add_scalar('val/Acc', Acc)
-        self.writer.add_scalar('val/Acc_class', Acc_class)
-        self.writer.add_scalar('val/fwIoU', FWIoU)
-        print('Validation:')
+        print('Compare the result and label:')
         print('[numImages: %5d]' % (i * self.args.batch_size + image.data.shape[0]))
-        print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+        # print("Acc:{}, Acc_class:{}, mIoU:{}, fwIoU: {}".format(Acc, Acc_class, mIoU, FWIoU))
+        print("Acc:", Acc)
+        print("Acc_class:", Acc_class)
+        print("mIoU:", mIoU)
+        print("fwIoU:", FWIoU)
+
+    # hard mining and change the train list of next epoch
+    def hard_mining(self):
+
+        iou_id = []
+        tbar = tqdm(self.val_loader, desc='\r')
+        for i, sample in enumerate(tbar):
+            image, target, image_id = sample['image'], sample['label'], sample['id']
+            image = image.numpy().astype(np.int64)
+            target = target.numpy().astype(np.float32)
+            self.evaluator.add_batch(target, image)
+            IoU = self.evaluator.One_Intersection_over_Union()
+            Iou = float(IoU)
+            iou_id.append([IoU, image_id])
+
+        iou_id.sort()
+        iou_id = iou_id[6:]
+
+        f = open('/usr/openv2/shuang/VOCdevkit/VOC2012/ImageSets/Segmentation/arg.txt', 'w')
+        for i in range(1059):
+            f.write(iou_id[i][1][0] + "\n")
+        f.close()
 
 
 def main():
@@ -277,7 +292,7 @@ def main():
     print(args)
     torch.manual_seed(args.seed)
     eva = evaluation(args)
-    eva.compare()
+    eva.hard_mining()
     eva.writer.close()
 
 

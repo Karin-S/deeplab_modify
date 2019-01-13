@@ -47,6 +47,7 @@ class VOCSegmentation(Dataset):
             for ii, line in enumerate(lines):
                 _image = os.path.join(self._image_dir, line + ".jpg")
                 _cat = os.path.join(self._cat_dir, line + ".png")
+                # print(_image)
                 assert os.path.isfile(_image)
                 assert os.path.isfile(_cat)
                 self.im_ids.append(line)
@@ -172,7 +173,7 @@ class VOCSegmentationtest(Dataset):
         return 'VOC2012(split=' + str(self.split) + ')'
 
 
-class VOCSegmentationval(Dataset):
+class VOCSegmentationval_save(Dataset):
     """
     PascalVoc dataset
     """
@@ -186,8 +187,8 @@ class VOCSegmentationval(Dataset):
         """
         super().__init__()
         self._base_dir = base_dir
-        self._image_dir = os.path.join(self._base_dir, 'val_res')#PEGImages
-        self._cat_dir = os.path.join(self._base_dir, 'SegmentationClassAug')#SegmentationClassAug
+        self._image_dir = os.path.join(self._base_dir, 'val_res_original_1')
+        self._cat_dir = os.path.join(self._base_dir, 'SegmentationClassAug')
 
         if isinstance(split, str):
             self.split = [split]
