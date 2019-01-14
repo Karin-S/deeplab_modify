@@ -6,10 +6,12 @@ def make_data_loader(args, **kwargs):
 
     if args.dataset == 'pascal':
         train_set = pascal.VOCSegmentation(args, split='train')
+        train_hard_mining_set = pascal.VOCSegmentation(args, split='train_hard_mining')
         val_set = pascal.VOCSegmentation(args, split='val')
-        val_set_for_save = pascal.VOCSegmentationval_save(args, split='val')
+        val_save_set = pascal.VOCSegmentation_save(args, split='val')
         arg_set = pascal.VOCSegmentation(args, split='arg')
         test_set = pascal.VOCSegmentationtest(args, split='test')
+        compare_set = pascal.VOCSegmentation_compare(args, split='val')
 
         if args.use_sbd:
             sbd_train = sbd.SBDSegmentation(args, split=['train', 'val'])
@@ -17,12 +19,14 @@ def make_data_loader(args, **kwargs):
 
         num_class = train_set.NUM_CLASSES
         train_loader = DataLoader(train_set, batch_size=args.batch_size, shuffle=True, **kwargs)
+        train_hard_mining_loader = DataLoader(train_hard_mining_set, batch_size=args.batch_size, shuffle=True, **kwargs)
         val_loader = DataLoader(val_set, batch_size=args.batch_size, shuffle=False, **kwargs)
+        val_save_loader = DataLoader(val_save_set, batch_size=args.batch_size, shuffle=False, **kwargs)
         arg_loader = DataLoader(arg_set, batch_size=args.batch_size, shuffle=True, **kwargs)
-        val_set_for_save = DataLoader(val_set_for_save, batch_size=1, shuffle=True, **kwargs)
         test_loader = DataLoader(test_set, batch_size=1, shuffle=True, **kwargs)
+        compare_loader = DataLoader(compare_set, batch_size=1, shuffle=True, **kwargs)
 
-        return train_loader, val_loader, arg_loader, test_loader, val_set_for_save, num_class
+        return train_loader, train_hard_mining_loader, val_loader, val_save_loader, arg_loader, test_loader, compare_loader, num_class
 
     elif args.dataset == 'cityscapes':
         train_set = cityscapes.CityscapesSegmentation(args, split='train')

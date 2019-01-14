@@ -29,7 +29,7 @@ class Trainer(object):
         #self.deform = args.deform
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.val_loader, self.arg_loader, self.nclass = make_data_loader(args, **kwargs)
+        self.train_loader, self.train_hard_mining_loader, self.val_loader, self.arg_loader, self.val_loader_for_save, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
 
         # Define network
         model = DeepLab(num_classes=self.nclass,
@@ -138,7 +138,7 @@ class Trainer(object):
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
             with torch.no_grad():
-                output = self.model(image,True)
+                output = self.model(image)
             loss = self.criterion(output, target)
             test_loss += loss.item()
             pred = output.data.cpu().numpy()

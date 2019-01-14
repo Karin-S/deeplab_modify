@@ -27,7 +27,7 @@ class evaluation(object):
 
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.val_loader, self.arg_loader, self.val_loader_for_compare, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
+        self.train_loader, self.val_loader, self.val_save_loader,  self.arg_loader, self.test_loader, self.val_loader_for_compare, self.nclass = make_data_loader(args, **kwargs)
 
         # Define network
         model = DeepLab(num_classes=self.nclass,
@@ -112,12 +112,11 @@ class evaluation(object):
         print('Loss: %.3f' % test_loss)
 
     # save the segmentation of test datasets
-    def test(self):
-
+    # change the target direction in pascal.py
+    def test_save(self):
         self.model.eval()
         self.evaluator.reset()
         tbar = tqdm(self.test_loader, desc='\r')
-
         for i, sample in enumerate(tbar):
             image = sample[0]
             image_id = sample[1]
@@ -131,13 +130,14 @@ class evaluation(object):
             im.save(image_id[0])
 
     # save the segmentation of validation datasets in original size
-    def validation_test(self):
+    # need to change the direction here
+    def validation_save(self):
         self.model.eval()
         self.evaluator.reset()
-        tbar = tqdm(self.val_loader, desc='\r')
+        filedir = 'C:\\Users\\Shuang\\Desktop\\val_res'
+        tbar = tqdm(self.val_save_loader, desc='\r')
         for i, sample in enumerate(tbar):
             image, target, image_id = sample['image'], sample['label'], sample['id']
-            print(id)
             if self.args.cuda:
                 image, target = image.cuda(), target.cuda()
             with torch.no_grad():
@@ -147,19 +147,20 @@ class evaluation(object):
             h = target.shape[1]
             w = target.shape[2]
             ratio = 513. / np.max([w, h])
-            print(ratio)
             if w < h:
                 m = int(w * ratio)
                 im = im.crop((0, 0, m, 513))
-                print(m)
             elif w >= h:
                 m = int(h * ratio)
-                print(m)
                 im = im.crop((0, 0, 513, m))
             im = im.resize((w, h), PIL.Image.BILINEAR)
-            im.save(os.path.join("C:\\Users\\Shuang\\Desktop\\val_res", image_id[0] + ".png"))
+
+            if not os.path.isdir(filedir):
+                os.makedirs(filedir)
+            im.save(os.path.join(filedir, image_id[0] + ".png"))
 
     # calculate the MIoU of the result and label
+    # need to change the direction in pascal.py
     def compare(self):
 
         tbar = tqdm(self.val_loader_for_compare, desc='\r')
@@ -184,23 +185,24 @@ class evaluation(object):
 
     # hard mining and change the train list of next epoch
     def hard_mining(self):
-
         iou_id = []
-        tbar = tqdm(self.val_loader, desc='\r')
+        tbar = tqdm(self.val_loader_for_compare, desc='\r')
         for i, sample in enumerate(tbar):
             image, target, image_id = sample['image'], sample['label'], sample['id']
             image = image.numpy().astype(np.int64)
             target = target.numpy().astype(np.float32)
-            self.evaluator.add_batch(target, image)
+            self.evaluator.one_add_batch(target, image)
             IoU = self.evaluator.One_Intersection_over_Union()
-            Iou = float(IoU)
+            IoU = float(IoU)
             iou_id.append([IoU, image_id])
 
         iou_id.sort()
-        iou_id = iou_id[6:]
-
-        f = open('/usr/openv2/shuang/VOCdevkit/VOC2012/ImageSets/Segmentation/arg.txt', 'w')
-        for i in range(1059):
+        print(iou_id)
+        filename = 'F:/pingan/VOCdevkit/VOC2012/ImageSets/Segmentation/arg1.txt'
+        if not os.path.exists(filename):
+            os.system(r'touch %s' % filename)
+        f = open(filename, 'w')
+        for i in range(10):
             f.write(iou_id[i][1][0] + "\n")
         f.close()
 
@@ -292,7 +294,7 @@ def main():
     print(args)
     torch.manual_seed(args.seed)
     eva = evaluation(args)
-    eva.hard_mining()
+    eva.validation_save()
     eva.writer.close()
 
 

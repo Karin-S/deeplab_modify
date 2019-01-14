@@ -1,10 +1,8 @@
 import torch
 import random
 import numpy as np
-
 from PIL import Image, ImageOps, ImageFilter
-import cv2
-
+# import cv2
 
 class Normalize(object):
     """Normalize a tensor image with mean and standard deviation.
@@ -66,7 +64,7 @@ class Resize_normalize(object):
         if w < h:
             pad_x = int(513 - resized.shape[1])
             resized2 = np.pad(resized, ((0, 0), (0, pad_x), (0, 0)), mode='constant')
-        elif w > h:
+        elif w >= h:
             pad_y = int(513 - resized.shape[0])
             resized2 = np.pad(resized, ((0, pad_y), (0, 0), (0, 0)), mode='constant')
 

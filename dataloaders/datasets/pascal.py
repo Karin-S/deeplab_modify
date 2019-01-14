@@ -7,15 +7,17 @@ from mypath import Path
 from torchvision import transforms
 from dataloaders import custom_transforms as tr
 import matplotlib.pyplot as plt
+import torch
 
 
+# contain pre-processed image and label
 class VOCSegmentation(Dataset):
     """
     PascalVoc dataset
     """
     NUM_CLASSES = 21
 
-    def __init__(self, args, base_dir=Path.db_root_dir('pascal'), split='train', ):
+    def __init__(self, args, base_dir=Path.db_root_dir('pascal'), split='train',):
         """
         :param base_dir: path to VOC dataset directory
         :param split: train/val
@@ -47,7 +49,6 @@ class VOCSegmentation(Dataset):
             for ii, line in enumerate(lines):
                 _image = os.path.join(self._image_dir, line + ".jpg")
                 _cat = os.path.join(self._cat_dir, line + ".png")
-                # print(_image)
                 assert os.path.isfile(_image)
                 assert os.path.isfile(_cat)
                 self.im_ids.append(line)
@@ -57,38 +58,41 @@ class VOCSegmentation(Dataset):
         assert (len(self.images) == len(self.categories))
 
         # Display stats
-        print('Number of images in {}: {:d}'.format(split, len(self.images)))
+        # print('Number of images in {}: {:d}'.format(split, len(self.images)))
 
     def __len__(self):
         return len(self.images)
 
     def __getitem__(self, index):
-        _img, _target = self._make_img_gt_point_pair(index)
+        _img, _target, _id = self._make_img_gt_point_pair(index)
         sample = {'image': _img, 'label': _target}
 
         for split in self.split:
             if split == "train":
-                return self.transform_tr(sample)
+                sample = self.transform_tr(sample)
+                sample['id'] = _id
+                return sample
             elif split == 'val':
-                return self.transform_val(sample)
+                sample = self.transform_val(sample)
+                sample['id'] = _id
+                return sample
             elif split == 'arg':
-                return self.transform_tr(sample)
+                sample = self.transform_tr(sample)
+                sample['id'] = _id
+                return sample
+            elif split == 'train_hard_mining':
+                sample = self.transform_val(sample)
+                sample['id'] = _id
+                return sample
 
     def _make_img_gt_point_pair(self, index):
         _img = Image.open(self.images[index]).convert('RGB')
         _target = Image.open(self.categories[index])
+        _id = self.im_ids[index]
 
-        return _img, _target
+        return _img, _target, _id
 
     def transform_tr(self, sample):
-        # original
-        # composed_transforms = transforms.Compose([
-        #     tr.RandomHorizontalFlip(),
-        #     tr.RandomScaleCrop(base_size=self.args.base_size, crop_size=self.args.crop_size),
-        #     tr.RandomGaussianBlur(),
-        #     tr.Normalize(mean=(0.5, 0.5, 0.5), std=(1, 1, 1)),
-        #     tr.ToTensor()])
-
         composed_transforms = transforms.Compose([
             tr.RandomHorizontalFlip(),
             tr.RandomScaleCrop(base_size=self.args.base_size, crop_size=self.args.crop_size),
@@ -100,24 +104,20 @@ class VOCSegmentation(Dataset):
     def transform_val(self, sample):
         composed_transforms = tr.Resize_normalize_train(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
 
-        # composed_transforms = transforms.Compose([
-        #     tr.FixScaleCrop(crop_size=self.args.crop_size),
-        #     tr.Normalize(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5)),
-        #     tr.ToTensor()])
-
         return composed_transforms(sample)
 
     def __str__(self):
         return 'VOC2012(split=' + str(self.split) + ')'
 
 
+# for test
 class VOCSegmentationtest(Dataset):
     """
     PascalVoc dataset
     """
     NUM_CLASSES = 21
 
-    def __init__(self, args, base_dir=Path.db_root_dir('pascal'), split='test', ):
+    def __init__(self, args, base_dir=Path.db_root_dir('pascal'), split='test',):
         """
         :param base_dir: path to VOC dataset directory
         :param split: train/val
@@ -155,7 +155,7 @@ class VOCSegmentationtest(Dataset):
                 self.categories.append(_cat)
 
         # Display stats
-        print('Number of images in {}: {:d}'.format(split, len(self.images)))
+        # print('Number of images in {}: {:d}'.format(split, len(self.images)))
 
     def __len__(self):
         return len(self.images)
@@ -173,7 +173,98 @@ class VOCSegmentationtest(Dataset):
         return 'VOC2012(split=' + str(self.split) + ')'
 
 
-class VOCSegmentationval_save(Dataset):
+# contain pre-processed image and origianal label
+class VOCSegmentation_save(Dataset):
+    """
+    PascalVoc dataset
+    """
+    NUM_CLASSES = 21
+
+    def __init__(self, args, base_dir=Path.db_root_dir('pascal'), split='train',):
+        """
+        :param base_dir: path to VOC dataset directory
+        :param split: train/val
+        :param transform: transform to apply
+        """
+        super().__init__()
+        self._base_dir = base_dir
+        self._image_dir = os.path.join(self._base_dir, 'JPEGImages')
+        self._cat_dir = os.path.join(self._base_dir, 'SegmentationClassAug')
+
+        if isinstance(split, str):
+            self.split = [split]
+        else:
+            split.sort()
+            self.split = split
+
+        self.args = args
+
+        _splits_dir = os.path.join(self._base_dir, 'ImageSets', 'Segmentation')
+
+        self.im_ids = []
+        self.images = []
+        self.categories = []
+
+        for splt in self.split:
+            with open(os.path.join(os.path.join(_splits_dir, splt + '.txt')), "r") as f:
+                lines = f.read().splitlines()
+
+            for ii, line in enumerate(lines):
+                _image = os.path.join(self._image_dir, line + ".jpg")
+                _cat = os.path.join(self._cat_dir, line + ".png")
+                assert os.path.isfile(_image)
+                assert os.path.isfile(_cat)
+                self.im_ids.append(line)
+                self.images.append(_image)
+                self.categories.append(_cat)
+
+        assert (len(self.images) == len(self.categories))
+
+        # Display stats
+        # print('Number of images in {}: {:d}'.format(split, len(self.images)))
+
+    def __len__(self):
+        return len(self.images)
+
+    def __getitem__(self, index):
+        _img, _target, _id = self._make_img_gt_point_pair(index)
+        sample = {'image': _img, 'label': _target}
+        mask = np.array(_target).astype(np.float32)
+        mask = torch.from_numpy(mask).float()
+
+        for split in self.split:
+            if split == "train":
+                sample = self.transform_val(sample)
+                sample['label'] = mask
+                sample['id'] = _id
+                return sample
+            elif split == 'val':
+                sample = self.transform_val(sample)
+                sample['label'] = mask
+                sample['id'] = _id
+                return sample
+            elif split == 'arg':
+                sample = self.transform_val(sample)
+                sample['label'] = mask
+                sample['id'] = _id
+                return sample
+
+    def _make_img_gt_point_pair(self, index):
+        _img = Image.open(self.images[index]).convert('RGB')
+        _target = Image.open(self.categories[index])
+        _id = self.im_ids[index]
+        return _img, _target, _id
+
+    def transform_val(self, sample):
+        composed_transforms = tr.Resize_normalize_train(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
+        return composed_transforms(sample)
+
+    def __str__(self):
+        return 'VOC2012(split=' + str(self.split) + ')'
+
+
+# contain two label
+class VOCSegmentation_compare(Dataset):
     """
     PascalVoc dataset
     """
@@ -220,23 +311,19 @@ class VOCSegmentationval_save(Dataset):
         assert (len(self.images) == len(self.categories))
 
         # Display stats
-        print('Number of images in {}: {:d}'.format(split, len(self.images)))
+        # print('Number of images in {}: {:d}'.format(split, len(self.images)))
 
     def __len__(self):
         return len(self.images)
 
     def __getitem__(self, index):
-        _img = Image.open(self.images[index])#.convert('RGB')
+        _img = Image.open(self.images[index])
         _target = Image.open(self.categories[index])
         _id = self.im_ids[index]
         sample = {'image': _img,
                   'label': _target,
                   'id': _id}
-        return self.transform_compare(sample)#self.transform_val(sample)
-
-    def transform_val(self, sample):
-        composed_transforms = tr.Resize_normalize_val(mean=(0.5, 0.5, 0.5), std=(0.5, 0.5, 0.5))
-        return composed_transforms(sample)
+        return self.transform_compare(sample)
 
     def transform_compare(self, sample):
         composed_transforms = tr.compare()
