@@ -29,7 +29,7 @@ class Trainer(object):
         #self.deform = args.deform
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.train_hard_mining_loader, self.val_loader, self.arg_loader, self.val_loader_for_save, self.test_loader, self.nclass = make_data_loader(args, **kwargs)
+        self.train_loader, self.train_hard_mining_loader, self.val_loader, self.val_save_loader, self.arg_loader, self.test_loader, self.val_loader_for_compare, self.nclass = make_data_loader(args, **kwargs)
 
         # Define network
         model = DeepLab(num_classes=self.nclass,
@@ -176,7 +176,7 @@ class Trainer(object):
 
 def main():
     parser = argparse.ArgumentParser(description="PyTorch DeeplabV3Plus Training")
-    parser.add_argument('--backbone', type=str, default='resnet',
+    parser.add_argument('--backbone', type=str, default='xception',
                         choices=['resnet', 'xception', 'drn', 'mobilenet'],
                         help='backbone name (default: xception)')
     parser.add_argument('--out-stride', type=int, default=16,

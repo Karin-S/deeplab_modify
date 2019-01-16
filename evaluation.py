@@ -27,7 +27,7 @@ class evaluation(object):
 
         # Define Dataloader
         kwargs = {'num_workers': args.workers, 'pin_memory': True}
-        self.train_loader, self.val_loader, self.val_save_loader,  self.arg_loader, self.test_loader, self.val_loader_for_compare, self.nclass = make_data_loader(args, **kwargs)
+        self.train_loader, self.train_hard_mining_loader, self.val_loader, self.val_save_loader,  self.arg_loader, self.test_loader, self.val_loader_for_compare, self.nclass = make_data_loader(args, **kwargs)
 
         # Define network
         model = DeepLab(num_classes=self.nclass,
@@ -135,6 +135,34 @@ class evaluation(object):
         self.model.eval()
         self.evaluator.reset()
         filedir = 'C:\\Users\\Shuang\\Desktop\\val_res'
+        tbar = tqdm(self.val_save_loader, desc='\r')
+        for i, sample in enumerate(tbar):
+            image, target, image_id = sample['image'], sample['label'], sample['id']
+            if self.args.cuda:
+                image, target = image.cuda(), target.cuda()
+            with torch.no_grad():
+                output = self.model(image)
+            prediction = output.data.max(1)[1].squeeze_(1).squeeze_(0).cpu().numpy()
+            im = PIL.Image.fromarray(prediction.astype('uint8'))
+            h = target.shape[1]
+            w = target.shape[2]
+            ratio = 513. / np.max([w, h])
+            if w < h:
+                m = int(w * ratio)
+                im = im.crop((0, 0, m, 513))
+            elif w >= h:
+                m = int(h * ratio)
+                im = im.crop((0, 0, 513, m))
+            im = im.resize((w, h), PIL.Image.BILINEAR)
+
+            if not os.path.isdir(filedir):
+                os.makedirs(filedir)
+            im.save(os.path.join(filedir, image_id[0] + ".png"))
+
+
+    def validation_resize(self):
+        self.model.eval()
+        self.evaluator.reset()
         tbar = tqdm(self.val_save_loader, desc='\r')
         for i, sample in enumerate(tbar):
             image, target, image_id = sample['image'], sample['label'], sample['id']

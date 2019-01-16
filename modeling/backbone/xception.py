@@ -4,6 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
 from modeling.sync_batchnorm.batchnorm import SynchronizedBatchNorm2d
+from torch_deform_conv.layers import ConvOffset2D
 
 
 def fixed_padding(inputs, kernel_size, dilation):
@@ -31,6 +32,7 @@ class SeparableConv2d(nn.Module):
         return x
 
 
+# relu first
 class SeparableConv2d2(nn.Module):
     def __init__(self, inplanes, planes, kernel_size=3, stride=1, dilation=1, bias=False, BatchNorm=None):
         super(SeparableConv2d2, self).__init__()
@@ -49,6 +51,92 @@ class SeparableConv2d2(nn.Module):
         return x
 
 
+# deformable
+class SeparableConv2d_deform(nn.Module):
+    def __init__(self, inplanes, planes, bias=False, BatchNorm=None):
+        super(SeparableConv2d_deform, self).__init__()
+
+        self.relu = nn.ReLU(inplace=False)
+        self.conv1 = ConvOffset2D(inplanes)
+        self.bn = BatchNorm(inplanes)
+        self.pointwise = nn.Conv2d(inplanes, planes, 1, 1, 0, 1, 1, bias=bias)
+
+    def forward(self, x):
+        x = fixed_padding(x, self.conv1.kernel_size[0], dilation=self.conv1.dilation[0])
+        x = self.conv1(x)
+        x = x[:, :, 1:-1, 1:-1]
+        print("change", x.shape)
+        x = self.bn(x)
+        x = self.relu(x)
+        x = self.pointwise(x)
+        return x
+
+
+class Block(nn.Module):
+    def __init__(self, inplanes, planes, dilation=1, BatchNorm=None):
+        super(Block, self).__init__()
+
+        self.relu = nn.ReLU(inplace=False)
+
+        self.SeparableConv2d1 = SeparableConv2d(inplanes, planes, 3, 1, dilation, BatchNorm=BatchNorm)
+        self.bn1 = BatchNorm(planes)
+
+        self.SeparableConv2d2 = SeparableConv2d(planes, planes, 3, 1, dilation, BatchNorm=BatchNorm)
+        self.bn2 = BatchNorm(planes)
+
+        self.SeparableConv2d3 = SeparableConv2d(planes, planes, 3, 1, dilation, BatchNorm=BatchNorm)
+        self.bn3 = BatchNorm(planes)
+
+    def forward(self, inp):
+        x = self.relu(inp)
+        x = self.SeparableConv2d1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.SeparableConv2d2(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+        x = self.SeparableConv2d3(x)
+        x = self.bn3(x)
+        x = x + inp
+
+        return x
+
+
+class Block_deform(nn.Module):
+    def __init__(self, inplanes, planes, dilation=1, BatchNorm=None):
+        super(Block_deform, self).__init__()
+
+        self.relu = nn.ReLU(inplace=False)
+
+        self.SeparableConv2d1 = SeparableConv2d_deform(inplanes, planes, BatchNorm=BatchNorm)
+        self.bn1 = BatchNorm(planes)
+
+        self.SeparableConv2d2 = SeparableConv2d_deform(planes, planes, BatchNorm=BatchNorm)
+        self.bn2 = BatchNorm(planes)
+
+        self.SeparableConv2d3 = SeparableConv2d_deform(planes, planes, BatchNorm=BatchNorm)
+        self.bn3 = BatchNorm(planes)
+
+    def forward(self, inp):
+        print('inp', inp.shape)
+        x = self.relu(inp)
+        x = self.SeparableConv2d1(x)
+        print('1', x.shape)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.SeparableConv2d2(x)
+        print('2', x.shape)
+        x = self.bn2(x)
+        x = self.relu(x)
+        x = self.SeparableConv2d3(x)
+        print('3', x.shape)
+        x = self.bn3(x)
+        x = x + inp
+
+        return x
+
+
+# Entry flow 1
 class Block1(nn.Module):
     def __init__(self, inplanes, planes, dilation=1, BatchNorm=None):
         super(Block1, self).__init__()
@@ -87,6 +175,7 @@ class Block1(nn.Module):
         return x
 
 
+# Entry flow 2
 class Block2(nn.Module):
     def __init__(self, inplanes, planes, dilation=1, BatchNorm=None):
         super(Block2, self).__init__()
@@ -126,6 +215,7 @@ class Block2(nn.Module):
         return x, low_level_feat
 
 
+# Entry flow 3
 class Block3(nn.Module):
     def __init__(self, inplanes, planes, stride, dilation=1, BatchNorm=None):
         super(Block3, self).__init__()
@@ -164,36 +254,7 @@ class Block3(nn.Module):
         return x
 
 
-class Block(nn.Module):
-    def __init__(self, inplanes, planes, dilation=1, BatchNorm=None):
-        super(Block, self).__init__()
-
-        self.relu = nn.ReLU(inplace=False)
-
-        self.SeparableConv2d1 = SeparableConv2d(inplanes, planes, 3, 1, dilation, BatchNorm=BatchNorm)
-        self.bn1 = BatchNorm(planes)
-
-        self.SeparableConv2d2 = SeparableConv2d(planes, planes, 3, 1, dilation, BatchNorm=BatchNorm)
-        self.bn2 = BatchNorm(planes)
-
-        self.SeparableConv2d3 = SeparableConv2d(planes, planes, 3, 1, dilation, BatchNorm=BatchNorm)
-        self.bn3 = BatchNorm(planes)
-
-    def forward(self, inp):
-        x = self.relu(inp)
-        x = self.SeparableConv2d1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.SeparableConv2d2(x)
-        x = self.bn2(x)
-        x = self.relu(x)
-        x = self.SeparableConv2d3(x)
-        x = self.bn3(x)
-        x = x + inp
-
-        return x
-
-
+# Exit flow 4
 class Block4(nn.Module):
     def __init__(self, inplanes, planes, dilation=1, BatchNorm=None):
         super(Block4, self).__init__()
@@ -278,7 +339,7 @@ class AlignedXception(nn.Module):
         self.block16 = Block(728, 728, dilation=middle_block_dilation, BatchNorm=BatchNorm)
         self.block17 = Block(728, 728, dilation=middle_block_dilation, BatchNorm=BatchNorm)
         self.block18 = Block(728, 728, dilation=middle_block_dilation, BatchNorm=BatchNorm)
-        self.block19 = Block(728, 728, dilation=middle_block_dilation, BatchNorm=BatchNorm)
+        self.block19 = Block_deform(728, 728, dilation=middle_block_dilation, BatchNorm=BatchNorm)
 
         # Exit flow
         self.block20 = Block4(728, 1024, dilation=exit_block_dilations[0], BatchNorm=BatchNorm)
@@ -315,6 +376,7 @@ class AlignedXception(nn.Module):
 
         # Middle flow
         x = self.block4(x)
+        x4 = x
         x = self.block5(x)
         x = self.block6(x)
         x = self.block7(x)
@@ -330,6 +392,7 @@ class AlignedXception(nn.Module):
         x = self.block17(x)
         x = self.block18(x)
         x = self.block19(x)
+        x = x + x4
 
         # Exit flow
         x = self.block20(x)

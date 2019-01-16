@@ -173,7 +173,7 @@ class VOCSegmentationtest(Dataset):
         return 'VOC2012(split=' + str(self.split) + ')'
 
 
-# contain pre-processed image and origianal label
+# contain pre-processed image and original label
 class VOCSegmentation_save(Dataset):
     """
     PascalVoc dataset
